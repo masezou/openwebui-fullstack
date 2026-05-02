@@ -269,6 +269,8 @@ services:
       # COMFYUI_BASE_URL: http://host.docker.internal:8188
       COMFYUI_BASE_URL: http://192.0.2.10:8188
 
+      IMAGE_GENERATION_MODEL: model.safetensors
+
       COMFYUI_WORKFLOW: >
                 {
                   "3": {
@@ -369,6 +371,8 @@ services:
       # IMAGES_EDIT_COMFYUI_BASE_URL: http://comfyui:8188
       # IMAGES_EDIT_COMFYUI_BASE_URL: http://host.docker.internal:8188
       IMAGES_EDIT_COMFYUI_BASE_URL: http://192.0.2.10:8188
+
+      IMAGE_EDIT_MODEL: model.safetensors
 
       IMAGES_EDIT_COMFYUI_WORKFLOW: >
         {
