@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<properties>
+
+  <parsers>
+
+    <!-- Start from DefaultParser, but we will explicitly configure PDF + Tesseract OCR -->
+    <parser class="org.apache.tika.parser.DefaultParser">
+      <parser-exclude class="org.apache.tika.parser.pdf.PDFParser"/>
+      <parser-exclude class="org.apache.tika.parser.ocr.TesseractOCRParser"/>
+    </parser>
+
+    <!-- PDF: OCR as fallback (good for scanned PDFs), while keeping born-digital PDFs fast -->
+    <parser class="org.apache.tika.parser.pdf.PDFParser">
+      <params>
+        <!-- Strategy examples are "no_ocr", "ocr_only", "auto" depending on version/config -->
+        <param name="ocrStrategy" type="string">auto</param>
+
+        <!-- DPI for rasterization when OCR is needed -->
+        <param name="ocrDPI" type="int">300</param>
+      </params>
+    </parser>
+
+    <!-- Image/* and OCR fallback: Japanese default -->
+    <parser class="org.apache.tika.parser.ocr.TesseractOCRParser">
+      <params>
+        <!-- Japanese horizontal + vertical -->
+        <param name="language" type="string">jpn+jpn_vert</param>
+
+        <!-- Prevent runaway OCR -->
+        <param name="timeoutSeconds" type="int">180</param>
+
+        <!-- File size guardrails (bytes) -->
+        <param name="minFileSizeToOcr" type="long">4096</param>
+        <param name="maxFileSizeToOcr" type="long">52428800</param>
+      </params>
+    </parser>
+
+  </parsers>
+
+</properties>

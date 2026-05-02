@@ -1,0 +1,1108 @@
+x-logging: &default-logging
+  logging:
+    driver: local
+    options:
+      max-size: "20m"
+      max-file: "5"
+x-common: &common
+  restart: unless-stopped
+  init: true
+  <<: *default-logging
+
+services:
+  ollama:
+    <<: *common
+    gpus: all
+    image: ollama/ollama:latest        # GPU-enabled Ollama image; optionally pin a version/digest
+    container_name: ollama
+    restart: unless-stopped
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+    ports:
+      - "11434:11434"                  # Ollama API (HTTP); restrict with 127.0.0.1 if external access is not needed
+    volumes:
+      - ./ollama-gpu:/root/.ollama
+      - ./models:/root/.ollama/models
+    environment:
+      # OLLAMA_DEBUG: "1"              # Enable verbose Ollama debug logs when troubleshooting
+      OLLAMA_HOST: 0.0.0.0             # Bind inside the container; use firewall/port binding for actual access control
+      OLLAMA_ORIGINS: "*"              # CORS origins for browser clients; this is not network access control
+      # OLLAMA_MAX_LOADED_MODELS: "1"  # Limit concurrently loaded models; useful on 16GB VRAM systems
+      # OLLAMA_KEEP_ALIVE: 12h         # Keep hot model loaded if memory/VRAM allows
+      OLLAMA_KEEP_ALIVE: 1h            # Avoid long model pinning so RAM/VRAM can be freed between tasks
+      OLLAMA_LOAD_TIMEOUT: 5m          # Allow enough time for large model loading
+      OLLAMA_MULTIUSER_CACHE: "true"   # Share model cache across concurrent users where supported
+      OLLAMA_NUM_PARALLEL: "2"         # Concurrent generations per loaded model
+      OLLAMA_NUM_THREADS: "6"          # CPU worker threads; adjust for physical cores and host load
+      OLLAMA_CONTEXT_LENGTH: "8192"    # Keep context moderate to save RAM/VRAM and reduce latency
+      # OLLAMA_SCHED_SPREAD: "1"       # Multi-GPU scheduling hint; usually unnecessary on a single-GPU host
+      OLLAMA_FLASH_ATTENTION: "1"      # Enable Flash Attention when supported by GPU/model/runtime
+
+      # OLLAMA_KV_CACHE_TYPE: q8_0     # Lighter KV cache; test quality/speed trade-off before production use
+      # OLLAMA_NO_MMAP: "1"            # Use only if memory-mapped model loading causes issues
+      # OLLAMA_GPU_LAYERS: "16"        # Manually control GPU offload layers; normally leave unset
+      OLLAMA_GPU_OVERHEAD: "2147483648"  # Reserve GPU memory for runtime/other workloads such as ComfyUI
+      # OLLAMA_NEW_ENGINE: "1"         # Experimental Ollama engine; enable only for testing   # Experimental Ollama engine; enable only for testing
+    healthcheck:
+        test:
+            [
+                "CMD",
+                "ollama",
+                "list"
+            ]
+        interval: 30s
+        timeout: 10s
+        retries: 10
+        start_period: 60s
+    stop_grace_period: 60s
+    logging:
+        driver: local
+        options:
+            max-size: "20m"
+            max-file: "5"
+    networks:
+      llm-net: {}
+
+  ollama-cpu:
+    <<: *common
+    image: ollama/ollama:latest
+    container_name: ollama-cpu
+    restart: unless-stopped
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+    ports:
+      - "12434:11434"
+    volumes:
+      - ./ollama-cpu:/root/.ollama
+      - ./models:/root/.ollama/models
+    environment:
+      # OLLAMA_DEBUG: "1"              # Enable verbose Ollama debug logs when troubleshooting
+      OLLAMA_HOST: 0.0.0.0             # Bind inside the container; use firewall/port binding for actual access control
+      OLLAMA_ORIGINS: "*"              # CORS origins for browser clients; this is not network access control
+      # OLLAMA_MAX_LOADED_MODELS: "1"  # Limit concurrently loaded models; useful for CPU fallback hosts
+      # OLLAMA_KEEP_ALIVE: 12h         # Keep hot model loaded if memory allows
+      OLLAMA_KEEP_ALIVE: 1h            # Avoid long model pinning so RAM can be freed between tasks
+      OLLAMA_LOAD_TIMEOUT: 5m          # Allow enough time for large model loading
+      OLLAMA_MULTIUSER_CACHE: "true"   # Share model cache across concurrent users where supported
+      OLLAMA_NUM_PARALLEL: "1"         # Keep CPU fallback serialized for predictable latency
+      OLLAMA_NUM_THREADS: "8"          # CPU worker threads; tune for responsiveness vs. throughput
+      OLLAMA_LLM_LIBRARY: cpu_avx2     # Force AVX2 backend for compatible x86_64 CPUs
+      OLLAMA_CONTEXT_LENGTH: "8192"    # Keep context moderate to save RAM and reduce latency
+      # OLLAMA_FLASH_ATTENTION: "1"    # GPU-only optimization; keep disabled for CPU-only mode
+      # OLLAMA_SCHED_SPREAD: "1"       # Multi-GPU scheduling hint; not needed for CPU-only mode
+
+      # OLLAMA_KV_CACHE_TYPE: q4_0     # Lighter KV cache for low-memory CPU boxes; test quality impact
+      # OLLAMA_NO_MMAP: "1"            # Use only if memory-mapped model loading causes issues
+      # OLLAMA_GPU_LAYERS: "16"        # GPU offload control; keep unset when OLLAMA_NO_GPU is enabled
+      OLLAMA_NO_GPU: "1"               # Force CPU-only inference
+    healthcheck:
+        test:
+            [
+                "CMD",
+                "ollama",
+                "list"
+            ]
+        interval: 30s
+        timeout: 10s
+        retries: 10
+        start_period: 60s
+    stop_grace_period: 60s
+    logging:
+        driver: local
+        options:
+            max-size: "20m"
+            max-file: "5"
+    networks:
+      llm-net: {}
+
+  open-webui:
+    <<: *common
+    #image: ghcr.io/open-webui/open-webui:latest-cuda
+    #image: ghcr.io/open-webui/open-webui:dev-cuda
+    image: ghcr.io/open-webui/open-webui:0.9.2-cuda
+    #image: ghcr.io/open-webui/open-webui:latest
+    #image: ghcr.io/open-webui/open-webui:0.9.2
+    gpus: all
+    container_name: open-webui
+    restart: unless-stopped
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+    ports:
+      - "3000:8080"                            # Web UI -> http://<host>:3000 (HTTP)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./openwebui:/app/backend/data
+    environment:
+      OFFLINE_MODE: "false"
+      # (Optional) If you want environment variables to keep overriding later,
+      # disable persistent config at your own risk:
+      ENABLE_PERSISTENT_CONFIG: "false"
+
+      # On GPU hosts:
+      USE_CUDA: "true"                         # Enable CUDA in Open WebUI backend
+      DEVICE_TYPE: cuda                        # Default device for internal tasks (Whisper, embeddings, etc.)
+      # On CPU-only hosts, instead set:
+      # USE_CUDA: "false"
+      # DEVICE_TYPE: cpu
+
+      # ====== Native Ollama connection ======
+      # Let Open WebUI directly manage Ollama (pull/remove models, etc.)
+      ENABLE_OLLAMA_API: "true"
+      OLLAMA_BASE_URL: http://ollama:11434
+      #OLLAMA_BASE_URL: http://192.0.2.10:11434
+      #OLLAMA_BASE_URLS: "http://ollama:11434;http://192.0.2.10:11434"
+
+      # ====== Ollama connects to mitmproxy ======
+      # OLLAMA_BASE_URL: http://mitmproxy:8000
+
+      WEBUI_DEFAULT_MODELS: qwen3.5:9b                  # (Optional) preselect default model
+      DEFAULT_MODELS: qwen3.5:9b                        # Default model shown in selector (example)
+      DEFAULT_PINNED_MODELS: qwen3.5:9b,qwen3.5:0.8b,qwen2.5vl:7b # Default pinned model shown in selector (example)
+      ENABLE_CUSTOM_MODEL_FALLBACK: "true"
+      MODELS_CACHE_TTL: "300"                            # Cache external model list for 5 minutes
+      # TASK_MODEL: qwen3.5:0.8b
+
+      DEFAULT_MODEL_METADATA: >
+          {
+              "capabilities": {
+                  "tools": true,
+                  "vision": false
+              },
+              "reasoning_tags": []
+          }
+
+      DEFAULT_MODEL_PARAMS: >
+          {
+              "temperature": 0.7,
+              "top_p": 0.9,
+              "repeat_penalty": 1.1,
+              "num_ctx": 8192,
+              "stream": true,
+              "stop": [
+                  "</think>"
+              ]
+          }
+
+      # (For production)
+      WEBUI_URL: https://openwebui.example.com:3000          # Public URL (must be set BEFORE enabling SSO)
+      CORS_ALLOW_ORIGIN: "https://openwebui.example.com:3000;http://localhost:3000;http://127.0.0.1:3000;http://192.168.10.6:3000"
+      CORS_ALLOW_CUSTOM_SCHEME: ""
+      ENABLE_COOKIE_SECURE: "false"                      # If  ORS_ALLOW_ORIGIN: "https://FQDN:3000", set true.
+
+      # (For development)
+      # WEBUI_URL: http://localhost:3000
+      # CORS_ALLOW_ORIGIN: "http://localhost:3000;http://127.0.0.1:3000;http://192.168.10.6:3000"
+      # CORS_ALLOW_CUSTOM_SCHEME: ""
+      # ENABLE_COOKIE_SECURE: "false"
+
+      # WEBHOOK_URL: "https://discord.com/api/webhooks/XXXXXXXXXX"
+
+      # ----- Admin bootstrap -----
+      # Only for initial setup, you can skip registar admin credential when initial setup was occurred.
+      # WEBUI_ADMIN_EMAIL: admin@example.com
+      # WEBUI_ADMIN_PASSWORD: "Change-Me-Admin-Password"
+
+      ENABLE_API_KEYS: "true"
+
+      # ----- Core -----
+      USER_AGENT: "OpenWebUI/0.9.2 (dev-test)"
+      ENV: dev                                           # Development / internal test behavior
+
+      # Treat this as first-boot seeding. These "PersistentConfig" values are stored by WebUI after initial launch.
+      # ----- Security / Users -----
+      WEBUI_AUTH: "true"                                 # If false, there is no authentication but initial setup only.
+      # ENABLE_SIGNUP: "false"                           # Disable self-signup in production
+      ENABLE_SIGNUP: "true"
+      ENABLE_SIGNUP_PASSWORD_CONFIRMATION: "true"
+      DEFAULT_USER_ROLE: pending                         # New users require admin approval
+      DEFAULT_GROUP_ID: newbie
+      WEBUI_AUTH_COOKIE_SECURE: "true"                   # Secure cookies (HTTPS only)
+      WEBUI_SESSION_COOKIE_SAME_SITE: "lax"              # Cross-site cookies when behind reverse proxy
+      WEBUI_AUTH_COOKIE_SAME_SITE: "lax"
+      # BYPASS_ADMIN_ACCESS_CONTROL: "false"             # Enforce access control for admins as well
+      # ENABLE_ADMIN_EXPORT: "false"                     # Reduce data exfiltration risk
+      WEBUI_SESSION_COOKIE_SECURE: "true"
+
+      WEBUI_SECRET_KEY: "Change-Me-Secret-key"
+
+      ENABLE_FORWARD_USER_INFO_HEADERS: "true"
+
+      DO_NOT_TRACK: "true"
+
+      # ----- API Providers (example: OpenAI-compatible) -----
+      # OPENAI_API_BASE_URL: https://api.openai.com/v1   # If using a custom gateway, set it here
+      # OPENAI_API_KEY: sk-************************      # Set your key
+
+      # ----- Pipeline (optional) -----
+      OPENAI_API_BASE_URL: http://pipeline:9099
+      OPENAI_API_KEY: "Change-Me-PIPELINES_API_KEY"
+
+      # ----- OIDC SSO (example values; match your IdP) -----
+      # Set WEBUI_URL first. Keep these only if you enable SSO.
+      # OAUTH_CLIENT_ID: openwebui-client
+      # OAUTH_CLIENT_SECRET: "****super-secret****"
+      # Additional issuer/redirect variables per SSO guide/IdP
+      # Tip: If you want always-from-ENV, set ENABLE_OAUTH_PERSISTENT_CONFIG=false
+
+      # ----- Performance knobs (optional) -----
+      CHAT_RESPONSE_STREAM_DELTA_CHUNK_SIZE: "12"
+      THREAD_POOL_SIZE: "64"
+
+      # ----- Memory (optional) -----
+      ENABLE_MEMORIES: "true"
+
+      # ----- Channel (optional) -----
+      ENABLE_CHANNELS: "true"
+
+      # ----- Image Generation (optional) -----
+      ENABLE_IMAGE_GENERATION: "true"
+      # ----- Stable Diffusion (optional) -----
+      # IMAGE_GENERATION_ENGINE: automatic1111
+      # IMAGE_GENERATION_MODEL: v1-5-pruned-emaonly.safetensors
+      # AUTOMATIC1111_BASE_URL: http://sd-webui:7860
+
+      # ----- comfyui (optional) -----
+      # If you uses default workflow in openwebui, copy or link realvisxlV50_v50Bakedvae.safetensors to  model.safetensors in ComfyUI/models/checkpoints/
+      IMAGE_GENERATION_ENGINE: comfyui
+      # COMFYUI_BASE_URL: http://comfyui:8188
+      # COMFYUI_BASE_URL: http://host.docker.internal:8188
+      COMFYUI_BASE_URL: http://192.0.2.10:8188
+
+      COMFYUI_WORKFLOW: >
+                {
+                  "3": {
+                    "inputs": {
+                      "seed": 0,
+                      "steps": 20,
+                      "cfg": 8,
+                      "sampler_name": "euler",
+                      "scheduler": "normal",
+                      "denoise": 1,
+                      "model": ["4", 0],
+                      "positive": ["6", 0],
+                      "negative": ["7", 0],
+                      "latent_image": ["5", 0]
+                    },
+                    "class_type": "KSampler",
+                    "_meta": {
+                      "title": "KSampler"
+                    }
+                  },
+                  "4": {
+                    "inputs": {
+                      "ckpt_name": "model.safetensors"
+                    },
+                    "class_type": "CheckpointLoaderSimple",
+                    "_meta": {
+                      "title": "Load Checkpoint"
+                    }
+                  },
+                  "5": {
+                    "inputs": {
+                      "width": 512,
+                      "height": 512,
+                      "batch_size": 1
+                    },
+                    "class_type": "EmptyLatentImage",
+                    "_meta": {
+                      "title": "Empty Latent Image"
+                    }
+                  },
+                  "6": {
+                    "inputs": {
+                      "text": "Prompt",
+                      "clip": ["4", 1]
+                    },
+                    "class_type": "CLIPTextEncode",
+                    "_meta": {
+                      "title": "CLIP Text Encode (Prompt)"
+                    }
+                  },
+                  "7": {
+                    "inputs": {
+                      "text": "",
+                      "clip": ["4", 1]
+                    },
+                    "class_type": "CLIPTextEncode",
+                    "_meta": {
+                      "title": "CLIP Text Encode (Prompt)"
+                    }
+                  },
+                  "8": {
+                    "inputs": {
+                      "samples": ["3", 0],
+                      "vae": ["4", 2]
+                    },
+                    "class_type": "VAEDecode",
+                    "_meta": {
+                      "title": "VAE Decode"
+                    }
+                  },
+                  "9": {
+                    "inputs": {
+                      "filename_prefix": "ComfyUI",
+                      "images": ["8", 0]
+                    },
+                    "class_type": "SaveImage",
+                    "_meta": {
+                      "title": "Save Image"
+                    }
+                  }
+                }
+
+      COMFYUI_WORKFLOW_NODES: >
+         [
+            {"type":"prompt","node_ids":["6"],"key":"text"},
+            {"type":"model","node_ids":["4"],"key":"ckpt_name"},
+            {"type":"width","node_ids":["5"],"key":"width"},
+            {"type":"height","node_ids":["5"],"key":"height"},
+            {"type":"steps","node_ids":["3"],"key":"steps"},
+            {"type":"seed","node_ids":["3"],"key":"seed"},
+            {"type":"cfg","node_ids":["3"],"key":"cfg"}
+          ]
+
+      # ----- Image EDIT (optional) -----
+      ENABLE_IMAGE_EDIT: "true"
+      IMAGE_EDIT_ENGINE: comfyui
+      IMAGE_EDIT_SIZE: 512x512
+      # IMAGES_EDIT_COMFYUI_BASE_URL: http://comfyui:8188
+      # IMAGES_EDIT_COMFYUI_BASE_URL: http://host.docker.internal:8188
+      IMAGES_EDIT_COMFYUI_BASE_URL: http://192.0.2.10:8188
+
+      IMAGES_EDIT_COMFYUI_WORKFLOW: >
+        {
+          "3": {
+            "inputs": {
+              "seed": 0,
+              "steps": 20,
+              "cfg": 7,
+              "sampler_name": "euler",
+              "scheduler": "normal",
+              "denoise": 0.5,
+              "model": ["4", 0],
+              "positive": ["6", 0],
+              "negative": ["7", 0],
+              "latent_image": ["5", 0]
+            },
+            "class_type": "KSampler"
+          },
+          "4": {
+            "inputs": {
+              "ckpt_name": "model.safetensors"
+            },
+            "class_type": "CheckpointLoaderSimple"
+          },
+          "5": {
+            "inputs": {
+              "pixels": ["10", 0],
+              "vae": ["4", 2]
+            },
+            "class_type": "VAEEncode"
+          },
+          "6": {
+            "inputs": {
+              "text": "Prompt",
+              "clip": ["4", 1]
+            },
+            "class_type": "CLIPTextEncode"
+          },
+          "7": {
+            "inputs": {
+              "text": "",
+              "clip": ["4", 1]
+            },
+            "class_type": "CLIPTextEncode"
+          },
+          "8": {
+            "inputs": {
+              "samples": ["3", 0],
+              "vae": ["4", 2]
+            },
+            "class_type": "VAEDecode"
+          },
+          "9": {
+            "inputs": {
+              "images": ["8", 0],
+              "filename_prefix": "edit"
+            },
+            "class_type": "SaveImage"
+          },
+          "10": {
+            "inputs": {},
+            "class_type": "LoadImage"
+          }
+        }
+
+      IMAGES_EDIT_COMFYUI_WORKFLOW_NODES: >
+        [
+          {"type":"prompt","node_ids":["6"],"key":"text"},
+          {"type":"model","node_ids":["4"],"key":"ckpt_name"},
+          {"type":"image","node_ids":["10"],"key":"image"},
+          {"type":"steps","node_ids":["3"],"key":"steps"},
+          {"type":"seed","node_ids":["3"],"key":"seed"},
+          {"type":"cfg","node_ids":["3"],"key":"cfg"}
+        ]
+
+      # ------- Code interpreter -------
+      ENABLE_CODE_INTERPRETER: "true"
+      CODE_EXECUTION_TIMEOUT: "120"
+      CODE_EXECUTION_MAX_OUTPUT: "100000"
+      CODE_EXECUTION_ALLOW_INSTALL: "true"
+      CODE_EXECUTION_SANDBOX: "false"
+
+      # ----- Redis / Valkey for sessions and websocket -----
+      REDIS_URL: redis://valkey:6379/0
+      WEBSOCKET_MANAGER: redis
+      WEBSOCKET_REDIS_URL: redis://valkey:6379/0
+      REDIS_KEY_PREFIX: open-webui
+
+      # ------- RAG -------
+      # ---- Vector DB ----
+      # VECTOR_DB is PersistentConfig, thus this value will be fixed when initial startup occurred.
+      VECTOR_DB: qdrant
+      QDRANT_URI: http://qdrant:6333
+      QDRANT_API_KEY: "Change-Me-qdrant"
+      QDRANT_COLLECTION_PREFIX: open-webui
+      ENABLE_QDRANT_MULTITENANCY_MODE: "True"
+      QDRANT_PREFER_GRPC: "false"
+      QDRANT_TIMEOUT: "10"
+      # ----- RAG Content Extraction Engine (optional) -----
+      CONTENT_EXTRACTION_ENGINE: tika
+      TIKA_SERVER_URL: http://tika:9998
+      # ----- EMBEDDING ENGINE -----
+      RAG_EMBEDDING_ENGINE: ollama
+      RAG_EMBEDDING_MODEL: nomic-embed-text:v1.5
+      RAG_OLLAMA_BASE_URL: http://ollama:11434 # Ollama base URL for embeddings (service name on the same Docker network)
+      #RAG_OLLAMA_BASE_URL: http://192.0.2.10:11434
+
+      # ----- RERANKING -----
+      # Note:
+      # - Reranking is handled by Open WebUI locally, not by Ollama.
+      # - Use BAAI/bge-reranker-v2-m3 for Japanese or multilingual RAG.
+      # - When reranking is enabled, set RAG_TOP_K higher than RAG_RERANKING_TOP_N.
+
+      # High accuracy / Japanese / multilingual
+      RAG_RERANKING_MODEL: BAAI/bge-reranker-v2-m3
+      RAG_TOP_K: "20"
+      RAG_RERANKING_TOP_N: "5"
+
+      # Medium weight / English demo
+      # RAG_RERANKING_MODEL: cross-encoder/ms-marco-MiniLM-L-12-v2
+      # RAG_TOP_K: "10"
+      # RAG_RERANKING_TOP_N: "3"
+
+      # Lightweight / no reranking model
+      # RAG_RERANKING_MODEL: ""
+      # RAG_TOP_K: "10"
+      # RAG_RERANKING_TOP_N: "3"
+
+      # --- Open Terminal Integration ---
+      TERMINAL_SERVER_CONNECTIONS: >-
+        [
+          {
+            "id":"open-terminal",
+            "url":"http://open-terminal:8000",
+            "key":"Change-Me-OpenTerminal-3yACKsEdk4y0U8ONJqX64INPHt1fi_lsqGtf4wZUwYF",
+            "name":"Manual Terminal UI",
+            "auth_type":"bearer",
+            "enabled": true,
+            "config":{"access_grants":[]}
+          },
+          {
+            "id":"terminals",
+            "url":"http://terminals:3001",
+            "key":"Change-Me-Terminals-ACKsEdk4y0U8ONJqX64INPHt1fi_lsqGtf4wZUwYF",
+            "name":"Chat Terminal",
+            "auth_type":"bearer",
+            "enabled": true,
+            "config":{"access_grants":[]}
+          }
+        ]
+
+      # --- MCP Integration ---
+      TOOL_SERVER_CONNECTIONS: |
+        [
+          {
+            "url": "http://mcpo:8000/memory",
+            "path": "openapi.json",
+            "auth_type": "none",
+            "key": "",
+            "config": { "enable": true },
+            "info": {
+              "name": "mcp.memory",
+              "description": "MCPO memory MCP server"
+            }
+          },
+          {
+            "url": "http://mcpo:8000/time",
+            "path": "openapi.json",
+            "auth_type": "none",
+            "key": "",
+            "config": { "enable": true },
+            "info": {
+              "name": "mcp.time",
+              "description": "MCPO time MCP server (Asia/Tokyo)"
+            }
+          },
+          {
+            "url": "http://mcpo:8000/fetch",
+            "path": "openapi.json",
+            "auth_type": "none",
+            "key": "",
+            "config": { "enable": true },
+            "info": {
+              "name": "mcp.fetch",
+              "description": "MCPO fetch MCP server"
+            }
+          },
+          {
+            "url": "http://mcpo:8000/calculator",
+            "path": "openapi.json",
+            "auth_type": "none",
+            "key": "",
+            "config": { "enable": true },
+            "info": {
+              "name": "mcp.calculator",
+              "description": "MCPO calculator MCP server"
+            }
+          },
+          {
+            "url": "http://mcpo:8000/filesystem",
+            "path": "openapi.json",
+            "auth_type": "none",
+            "key": "",
+            "config": { "enable": true },
+            "info": {
+              "name": "mcp.filesystem",
+              "description": "MCPO filesystem MCP server"
+            }
+          },
+          {
+            "url": "http://mcpo:8000/sequential-thinking",
+            "path": "openapi.json",
+            "auth_type": "none",
+            "key": "",
+            "config": { "enable": true },
+            "info": {
+              "name": "mcp.sequential-thinking",
+              "description": "MCPO sequential thinking MCP server"
+            }
+          }
+        ]
+
+
+
+      # --- Web Search ---
+      # Enable Web Search feature
+      ENABLE_WEB_SEARCH: "true"
+
+      # Search backend
+      #WEB_SEARCH_ENGINE: "duckduckgo"
+      WEB_SEARCH_ENGINE: "searxng"
+      SEARXNG_QUERY_URL: "http://searxng:8080/search"
+
+      # Search behavior
+      WEB_SEARCH_RESULT_COUNT: "5"
+      WEB_SEARCH_CONCURRENT_REQUESTS: "1"
+
+      # Page fetching
+      WEB_LOADER_CONCURRENT_REQUESTS: "2"
+      BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL: "false"
+
+      # Advanced behavior
+      BYPASS_WEB_SEARCH_WEB_LOADER: "false"
+      WEB_FETCH_MAX_CONTENT_LENGTH: "50000"
+
+      ENABLE_OPENAI_API: "true"
+      # ====== A) OpenAI-compatible connection (/v1 endpoint) ======
+      # Use Ollama as an OpenAI-compatible server (e.g., Chat Completions)
+      # OPENAI_API_BASE_URL: http://ollama:11434/v1
+      # API key is practically unused by Ollama, but keep it for client compatibility
+      # OPENAI_API_KEY: ollama-local
+
+      # ====== C) OpenAI connection (/v1 endpoint) ======
+      # OPENAI_API_KEY is in env_file for security.
+
+      HF_HUB_OFFLINE: "0"               # Forcedly put into online mode
+      HF_HUB_DISABLE_TELEMETRY: "1"     # (Optional) Disable only telemetry
+      # ----- Whisper / Audio STT (local Whisper) -----
+      # USE_CUDA/DEVICE_TYPE control internal Torch device for local models (incl. Whisper).
+      AUDIO_STT_ENGINE: "whisper"
+      AUDIO_STT_MODEL: "whisper"
+
+      # Whisper model configuration for local STT.
+      # This name is resolved via faster-whisper; you can change to medium/distil-large-v3 if needed.
+      WHISPER_MODEL: guillaumekln/faster-whisper-small
+      # Chunk length (seconds) for long audio; adjust for very long files.
+      WHISPER_CHUNK_LENGTH: "30"
+
+      # --- Text to Speech (optional) ---
+      AUDIO_TTS_ENGINE: openai
+      AUDIO_TTS_OPENAI_API_BASE_URL: http://openai-edge-tts:5050/v1
+      AUDIO_TTS_OPENAI_API_KEY: Chnage-Me-tts_api_key
+      AUDIO_TTS_MODEL: tts-1
+      AUDIO_TTS_SPLIT_ON: punctuation
+
+      # --- Language Setting ---
+      TZ: Asia/Tokyo
+      DEFAULT_LOCALE: en                                 # Default language
+      WHISPER_LANGUAGE: ja
+      AUDIO_TTS_VOICE: ja-JP-NanamiNeural
+      VOICE_MODE_PROMPT_TEMPLATE: |-
+        You are a voice assistant. Always speak in Japanese.
+        When English words or phrases appear in the user's input or when English terminology is necessary for clarity, output those English parts exactly as English text without translation.
+        Do not convert English terms into katakana.
+        The English portions should remain as-is so that the TTS engine produces native English pronunciation.
+        All explanations, reasoning, and conversational content must be in natural, polite, and easy-to-understand Japanese.
+        Keep responses concise and suitable for voice conversation.
+
+      # Google Drive Integration
+      #ENABLE_GOOGLE_DRIVE_INTEGRATION: "true"
+      #GOOGLE_DRIVE_CLIENT_ID: "xxxxxxxx.apps.googleusercontent.com"
+      #GOOGLE_DRIVE_API_KEY: "xxxxxxxxxxxxxxxxxxxxxxxx"
+
+      # One Drive Integration
+      #ENABLE_ONEDRIVE_INTEGRATION: "true"
+      #ENABLE_ONEDRIVE_PERSONAL: "true"
+      #ONEDRIVE_CLIENT_ID_PERSONAL: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+
+      # ----- Proxies (optional) -----
+      # http_proxy: http://proxy.local:3128
+      # http_proxy: http://proxy.local:3128
+      # no_proxy: .example.com,127.0.0.1,localhost
+
+      # ----- LOG (optional) -----
+      AUDIT_LOG_LEVEL: REQUEST
+      # ----- MISC (optional) -----
+      ADMIN_EMAIL: admin@example.com
+
+    env_file:
+      - /root/.env
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-f",
+          "http://127.0.0.1:8080"
+        ]
+    depends_on:
+      ollama:
+        condition: service_healthy
+      mcpo:
+        condition: service_healthy
+      pipeline:
+        condition: service_healthy
+      openai-edge-tts:
+        condition: service_healthy
+      open-terminal:
+        condition: service_healthy
+      terminals:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      tika:
+        condition: service_healthy
+      searxng:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+    networks:
+      llm-net: {}
+
+  # connect sppeach.microsoft.com
+  openai-edge-tts:
+    <<: *common
+    image: travisvn/openai-edge-tts:latest
+    container_name: openai-edge-tts
+    restart: unless-stopped
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+    environment:
+      # set same value with AUDIO_TTS_OPENAI_API_KEY in OpenWebUI
+      API_KEY: "Chnage-Me-tts_api_key"
+      PORT: "5050"
+
+      DEFAULT_VOICE: "ja-JP-NanamiNeural"
+      DEFAULT_RESPONSE_FORMAT: "mp3"
+      DEFAULT_SPEED: "1.0"
+      DEFAULT_LANGUAGE: ja-JP
+      REQUIRE_API_KEY: "False"
+      REMOVE_FILTER: "False"
+      EXPAND_API: "True"
+    healthcheck:
+        test:
+            [
+                "CMD-SHELL",
+                "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:5050/v1/models', timeout=5);\""
+            ]
+        interval: 30s
+        timeout: 10s
+        retries: 10
+        start_period: 30s
+    networks:
+      llm-net: {}
+
+  searxng:
+    <<: *common
+    image: searxng/searxng:latest
+    container_name: searxng
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+    volumes:
+      - ./data/searxng:/etc/searxng
+    environment:
+      INSTANCE_NAME: searxng
+      TZ: Asia/Tokyo
+    healthcheck:
+      test:
+        ["CMD-SHELL", "wget -q --spider http://127.0.0.1:8080 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      llm-net: {}
+
+  valkey:
+    <<: *common
+    image: valkey/valkey:latest
+    container_name: valkey
+    restart: unless-stopped
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    networks:
+      llm-net: {}
+
+  mcpo:
+    <<: *common
+    image: ghcr.io/open-webui/mcpo:latest
+    container_name: mcpo
+    restart: unless-stopped
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+    command:
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8000"
+      - "--config"
+      - "/app/config/config.json"
+      - "--hot-reload"
+    ports:
+      - "8000:8000"                       # Open docs from outside: http://<host>:8000/docs
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./mcpo/config.json:/app/config/config.json:ro
+      - ./mcpo/data:/app/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request,sys; urllib.request.urlopen('http://127.0.0.1:8000/time/openapi.json', timeout=3); sys.exit(0)"
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      llm-net: {}
+
+  pipeline:
+    <<: *common
+    image: ghcr.io/open-webui/pipelines:latest-cuda
+    gpus: all
+    container_name: pipeline
+    restart: unless-stopped
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+    volumes:
+      - ./pipelines:/app/pipelines
+    environment:
+      PIPELINES_API_KEY: "Change-Me-PIPELINES_API_KEY"
+
+      # Default Ollama endpoint for other pipelines
+      OLLAMA_BASE_URL: http://ollama:11434
+      #OLLAMA_BASE_URL: http://192.0.2.10:11434
+
+      # pipeline customization pipeline/ollama-lmstudio_manifold.py
+      # Dedicated CPU Ollama endpoint for ollama_manifold_cpu.py
+      OLLAMA_CPU_BASE_URL: http://ollama-cpu:11434
+
+      # Dedicated CPU Ollama endpoint for ollama_manifold_cpu.py
+      LMSTUDIO_BASE_URL: http://192.0.2.10:1234
+
+      # If you want to use OpenAI API
+      # OPENAI_API_BASE_URL: http://ollama:11434/v1
+      # OPENAI_API_KEY: ollama-local
+      MCPO_BASE_URL: "http://mcpo:8000"
+      # SUMMARY_MODEL: "qwen3.5:0.8b"
+      SUMMARY_EVERY_N_USER_TURNS: "8"
+      SUMMARY_KEEP_LAST_TURNS: "6"
+    ports:
+      - "9099:9099"     # expose pipelines to host (for curl/debug)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test:
+        ["CMD", "curl", "-f", "http://127.0.0.1:9099"]
+    depends_on:
+      ollama-cpu:
+        condition: service_healthy
+    networks:
+      llm-net: {}
+
+  open-terminal:
+    <<: *common
+    image: ghcr.io/open-webui/open-terminal:latest
+    container_name: open-terminal
+    restart: unless-stopped
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+    group_add:
+      - "988"
+    # ports:
+    #   - "127.0.0.1:8000:8000"
+    environment:
+      OPEN_TERMINAL_API_KEY: "Change-Me-OpenTerminal-3yACKsEdk4y0U8ONJqX64INPHt1fi_lsqGtf4wZUwYF"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./:/workspace
+    working_dir: /workspace
+    networks:
+      - llm-net
+    stdin_open: true
+    tty: true
+    healthcheck:
+        test:
+            [
+                "CMD-SHELL",
+                "python3 -c \"import socket; s=socket.create_connection(('127.0.0.1',8000),5); s.close()\""
+            ]
+        interval: 30s
+        timeout: 10s
+        retries: 10
+        start_period: 30s
+
+  terminals:
+    <<: *common
+    image: ghcr.io/open-webui/terminals:latest
+    container_name: openwebui-terminals
+    restart: unless-stopped
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+    environment:
+      TERMINALS_BACKEND: docker
+      TERMINALS_API_KEY: "Change-Me-Terminals-ACKsEdk4y0U8ONJqX64INPHt1fi_lsqGtf4wZUwYF"
+      TERMINALS_IMAGE: ghcr.io/open-webui/open-terminal:latest
+      TERMINALS_NETWORK: llm-net
+      TERMINALS_PORT: "3001"
+      TERMINALS_HOST: "0.0.0.0"
+      TERMINALS_IDLE_TIMEOUT_MINUTES: "30"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./data/terminals:/app/data
+    ports:
+      - "127.0.0.1:3001:3001"
+    healthcheck:
+        test:
+            [
+                "CMD-SHELL",
+                "python3 -c \"import socket; s=socket.create_connection(('127.0.0.1',3001),5); s.close()\""
+            ]
+        interval: 30s
+        timeout: 10s
+        retries: 10
+        start_period: 30s
+    networks:
+      - llm-net
+
+  qdrant:
+    <<: *common
+    # image: qdrant/qdrant:v1.17.0
+    image: qdrant/qdrant:v1.17.0-gpu-nvidia
+    gpus: all
+    container_name: qdrant
+    restart: unless-stopped
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+    ports:
+      - "6333:6333"   # Open dashboard from outside: http://<host>:6333/dashboard
+      - "6334:6334"
+    environment:
+      QDRANT__SERVICE__API_KEY: "Change-Me-qdrant"
+      # Enable GPU indexing (important)
+      QDRANT__GPU__INDEXING: "1"
+      # Optional: make troubleshooting easier
+      QDRANT__LOG_LEVEL: INFO
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+    healthcheck:
+        test:
+            [
+                "CMD-SHELL",
+                "bash -c '</dev/tcp/127.0.0.1/6333'"
+            ]
+        interval: 10s
+        timeout: 5s
+        retries: 20
+        start_period: 20s
+    stop_grace_period: 60s
+    logging:
+        driver: local
+        options:
+            max-size: "20m"
+            max-file: "5"
+    networks:
+      llm-net: {}
+
+  tika:
+    <<: *common
+    build:
+      context: ./tika-ja-full
+      dockerfile: Dockerfile
+    image: tika-ja-full:local
+
+    container_name: tika
+    restart: unless-stopped
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+    environment:
+      LANG: ja_JP.UTF-8
+      LANGUAGE: ja_JP:ja
+      LC_ALL: ja_JP.UTF-8
+      TZ: Asia/Tokyo
+      JAVA_TOOL_OPTIONS: "-Xms512m -Xmx4g"
+    volumes:
+      - ./tika-ja-full/tika-config.xml:/tika-config.xml:ro
+    command: ["--config", "/tika-config.xml"]
+    healthcheck:
+        test:
+            [
+                "CMD-SHELL",
+                "wget -q --spider http://127.0.0.1:9998/tika || exit 1"
+            ]
+        interval: 30s
+        timeout: 10s
+        retries: 10
+        start_period: 30s
+    networks:
+      llm-net: {}
+
+
+  mitmproxy:
+    <<: *common
+    profiles: ["debug"]
+    image: mitmproxy/mitmproxy:latest
+    container_name: mitmproxy
+    restart: unless-stopped
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+    command:
+      - mitmweb
+      - --mode
+      - reverse:http://ollama:11434
+      #- reverse:http://192.0.2.10:11434
+      # Proxy side (Open WebUI → mitmproxy → Ollama)
+      - --listen-host
+      - 0.0.0.0
+      - --listen-port
+      - "8000"
+      # Web UI side (Web browser → mitmweb)
+      - --web-host
+      - 0.0.0.0
+      - --web-port
+      - "8081"
+      - --set
+      - web_password=Change-Me-Password
+      # Enable from external access
+      - --set
+      - block_global=false
+    volumes:
+      - ./mitm-data:/home/mitmproxy
+    ports:
+      - "8081:8081"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request,sys; urllib.request.urlopen('http://ollama:11434/v1/models', timeout=3); sys.exit(0)"
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+    networks:
+      llm-net: {}
+
+  mitmproxy-cpu:
+    <<: *common
+    profiles: ["debug"]
+    image: mitmproxy/mitmproxy:latest
+    container_name: mitmproxy-cpu
+    restart: unless-stopped
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+    command:
+      - mitmweb
+      - --mode
+      - reverse:http://ollama-cpu:11434
+      # Proxy side (CLI tools → mitmproxy-cpu → ollama-cpu)
+      - --listen-host
+      - 0.0.0.0
+      - --listen-port
+      - "8002"
+      # Web UI side (Web browser → mitmweb)
+      - --web-host
+      - 0.0.0.0
+      - --web-port
+      - "8083"
+      - --set
+      - web_password=Change-Me-Password
+      # Enable from external access
+      - --set
+      - block_global=false
+    volumes:
+      - ./mitm-data-cpu:/home/mitmproxy
+    ports:
+      - "8083:8083"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request,sys; urllib.request.urlopen('http://ollama-cpu:11434/v1/models', timeout=3); sys.exit(0)"
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    networks:
+      llm-net: {}
+
+volumes:
+  qdrant_storage:
+
+networks:
+  llm-net:
+    name: llm-net

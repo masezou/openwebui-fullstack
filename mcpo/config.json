@@ -1,0 +1,41 @@
+{
+  "mcpServers": {
+    "memory": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"],
+      "env": { "MEMORY_FILE_PATH": "/app/data/memory.json" },
+      "alwaysAllow": true
+    },
+    "time": {
+      "command": "uvx",
+      "args": ["mcp-server-time", "--local-timezone=Asia/Tokyo"],
+      "alwaysAllow": true
+    },
+    "fetch": {
+      "command": "uvx",
+      "args": ["mcp-server-fetch"],
+      "alwaysAllow": true
+    },
+    "calculator": {
+      "command": "uvx",
+      "args": ["mcp-server-calculator"],
+      "alwaysAllow": true
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/app/data"],
+      "disabledTools": [
+        "write_file",
+        "edit",
+        "delete_file",
+        "move_file"
+      ],
+      "alwaysAllow": true
+    },
+    "sequential-thinking": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
+      "alwaysAllow": true
+    }
+  }
+}
