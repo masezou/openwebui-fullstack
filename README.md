@@ -47,7 +47,7 @@ This setup provides a **full-featured AI stack** with the following capabilities
 - **Audio**
   - Whisper (STT)
   - Edge-TTS (TTS)
-
+  
 ---
 
 ## 📁 Directory Structure
