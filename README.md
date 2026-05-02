@@ -19,6 +19,16 @@ Before using this in any real environment:
 
 ---
 
+## 🖥 Requirements
+
+- Docker & Docker Compose
+- NVIDIA GPU (recommended) or DGX Spark
+- NVIDIA Container Toolkit
+
+CPU-only mode may work but performance will be limited.
+
+---
+
 ## 🌐 Network / Host Configuration
 
 - Hostnames, IP addresses, and endpoints in this repository are **examples only**.
@@ -150,6 +160,16 @@ docker compose up -d
 ### 4. Access
 
 http://localhost:3000
+
+---
+
+## ⚙️ First Startup Notes
+
+- Initial startup may take several minutes.
+- Models may be downloaded automatically.
+- Vector database and embeddings may be initialized.
+
+Please wait until all containers are healthy.
 
 ---
 
