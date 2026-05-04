@@ -604,7 +604,7 @@ services:
       # Search backend
       #WEB_SEARCH_ENGINE: "duckduckgo"
       WEB_SEARCH_ENGINE: "searxng"
-      SEARXNG_QUERY_URL: "http://searxng:8080/search"
+      SEARXNG_QUERY_URL: "http://searxng:8080/search?q=<query>&format=json&language=ja&safesearch=0"
 
       # Search behavior
       WEB_SEARCH_RESULT_COUNT: "5"
