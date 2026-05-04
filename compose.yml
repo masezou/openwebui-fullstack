@@ -643,7 +643,8 @@ services:
 
       # --- Text to Speech (optional) ---
       AUDIO_TTS_ENGINE: openai
-      AUDIO_TTS_OPENAI_API_BASE_URL: http://openai-edge-tts:5050/v1
+      # AUDIO_TTS_OPENAI_API_BASE_URL: http://openai-edge-tts:5050/v1
+      AUDIO_TTS_OPENAI_API_BASE_URL: http://openai-edge-tts:8880/v1
       AUDIO_TTS_OPENAI_API_KEY: Change-Me-tts_api_key
       AUDIO_TTS_MODEL: tts-1
       AUDIO_TTS_SPLIT_ON: punctuation
@@ -652,7 +653,8 @@ services:
       TZ: Asia/Tokyo
       DEFAULT_LOCALE: en                                 # Default language
       WHISPER_LANGUAGE: ja
-      AUDIO_TTS_VOICE: ja-JP-NanamiNeural
+      # AUDIO_TTS_VOICE: ja-JP-NanamiNeural
+      AUDIO_TTS_VOICE: jf_alpha
       VOICE_MODE_PROMPT_TEMPLATE: |-
         You are a voice assistant. Always speak in Japanese.
         When English words or phrases appear in the user's input or when English terminology is necessary for clarity, output those English parts exactly as English text without translation.
@@ -717,35 +719,61 @@ services:
       llm-net: {}
 
   # connect sppeach.microsoft.com
+  # openai-edge-tts:
+  #   <<: *common
+  #   image: travisvn/openai-edge-tts:latest
+  #   container_name: openai-edge-tts
+  #   restart: unless-stopped
+  #   labels:
+  #     com.centurylinklabs.watchtower.enable: "true"
+  #   environment:
+  #     # set same value with AUDIO_TTS_OPENAI_API_KEY in OpenWebUI
+  #     API_KEY: "Change-Me-tts_api_key"
+  #     PORT: "5050"
+  #
+  #     DEFAULT_VOICE: "ja-JP-NanamiNeural"
+  #     DEFAULT_RESPONSE_FORMAT: "mp3"
+  #     DEFAULT_SPEED: "1.0"
+  #     DEFAULT_LANGUAGE: ja-JP
+  #     REQUIRE_API_KEY: "True"
+  #     REMOVE_FILTER: "False"
+  #     EXPAND_API: "True"
+  #   healthcheck:
+  #       test:
+  #           [
+  #               "CMD-SHELL",
+  #               "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:5050/v1/models', timeout=5);\""
+  #           ]
+  #       interval: 30s
+  #       timeout: 10s
+  #       retries: 10
+  #       start_period: 30s
+  #   networks:
+  #     llm-net: {}
+
   openai-edge-tts:
     <<: *common
-    image: travisvn/openai-edge-tts:latest
+    image: ghcr.io/remsky/kokoro-fastapi-cpu:latest
+    # image: ghcr.io/remsky/kokoro-fastapi-gpu:latest  # only works sm_90 / sm_120 blackwell does't work
+    # gpus: all
     container_name: openai-edge-tts
     restart: unless-stopped
     labels:
       com.centurylinklabs.watchtower.enable: "true"
+    ports:
+      - "8880:8880"
     environment:
-      # set same value with AUDIO_TTS_OPENAI_API_KEY in OpenWebUI
-      API_KEY: "Change-Me-tts_api_key"
-      PORT: "5050"
-
-      DEFAULT_VOICE: "ja-JP-NanamiNeural"
-      DEFAULT_RESPONSE_FORMAT: "mp3"
-      DEFAULT_SPEED: "1.0"
-      DEFAULT_LANGUAGE: ja-JP
-      REQUIRE_API_KEY: "True"
-      REMOVE_FILTER: "False"
-      EXPAND_API: "True"
+      TZ: Asia/Tokyo
     healthcheck:
         test:
             [
                 "CMD-SHELL",
-                "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:5050/v1/models', timeout=5);\""
+                "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8880/v1/models', timeout=5);\""
             ]
         interval: 30s
         timeout: 10s
         retries: 10
-        start_period: 30s
+        start_period: 60s
     networks:
       llm-net: {}
 
