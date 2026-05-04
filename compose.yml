@@ -186,13 +186,13 @@ services:
 
       # (For production)
       WEBUI_URL: https://openwebui.example.com:3000          # Public URL (must be set BEFORE enabling SSO)
-      CORS_ALLOW_ORIGIN: "https://openwebui.example.com:3000;http://localhost:3000;http://127.0.0.1:3000;http://192.168.10.6:3000"
+      CORS_ALLOW_ORIGIN: "https://openwebui.example.com:3000;http://localhost:3000;http://127.0.0.1:3000;http://192.0.2.10:3000"
       CORS_ALLOW_CUSTOM_SCHEME: ""
       ENABLE_COOKIE_SECURE: "false"                      # If  ORS_ALLOW_ORIGIN: "https://FQDN:3000", set true.
 
       # (For development)
       # WEBUI_URL: http://localhost:3000
-      # CORS_ALLOW_ORIGIN: "http://localhost:3000;http://127.0.0.1:3000;http://192.168.10.6:3000"
+      # CORS_ALLOW_ORIGIN: "http://localhost:3000;http://127.0.0.1:3000;http://192.0.2.10:3000"
       # CORS_ALLOW_CUSTOM_SCHEME: ""
       # ENABLE_COOKIE_SECURE: "false"
 
@@ -682,9 +682,6 @@ services:
       AUDIT_LOG_LEVEL: REQUEST
       # ----- MISC (optional) -----
       ADMIN_EMAIL: admin@example.com
-
-    env_file:
-      - /root/.env
 
     healthcheck:
       test:
