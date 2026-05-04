@@ -10,38 +10,27 @@ x-common: &common
   <<: *default-logging
 
 services:
-  # connect sppeach.microsoft.com
   openai-edge-tts:
     <<: *common
-    image: travisvn/openai-edge-tts:latest
+    image: ghcr.io/remsky/kokoro-fastapi-cpu:latest
     container_name: openai-edge-tts
     restart: unless-stopped
     labels:
       com.centurylinklabs.watchtower.enable: "true"
     ports:
-      - "127.0.0.1:5050:5050"
+      - "127.0.0.1:8880:8880"
     environment:
-      # set same value with AUDIO_TTS_OPENAI_API_KEY in OpenWebUI
-      API_KEY: "Change_Me_tts_api_key"
-      PORT: "5050"
-
-      DEFAULT_VOICE: "ja-JP-NanamiNeural"
-      DEFAULT_RESPONSE_FORMAT: "mp3"
-      DEFAULT_SPEED: "1.0"
-      DEFAULT_LANGUAGE: ja-JP
-      REQUIRE_API_KEY: "True"
-      REMOVE_FILTER: "False"
-      EXPAND_API: "True"
+      TZ: Asia/Tokyo
     healthcheck:
         test:
             [
                 "CMD-SHELL",
-                "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:5050/v1/models', timeout=5);\""
+                "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8880/v1/models', timeout=5);\""
             ]
         interval: 30s
         timeout: 10s
         retries: 10
-        start_period: 30s
+        start_period: 60s
     networks:
       llm-net: {}
 
