@@ -618,6 +618,10 @@ services:
       BYPASS_WEB_SEARCH_WEB_LOADER: "false"
       WEB_FETCH_MAX_CONTENT_LENGTH: "50000"
 
+      # --- Web Loader ---
+      WEB_LOADER_ENGINE: playwright
+      PLAYWRIGHT_WS_URL: "ws://playwright:3000"
+
       ENABLE_OPENAI_API: "true"
       # ====== A) OpenAI-compatible connection (/v1 endpoint) ======
       # Use Ollama as an OpenAI-compatible server (e.g., Chat Completions)
@@ -662,6 +666,8 @@ services:
         The English portions should remain as-is so that the TTS engine produces native English pronunciation.
         All explanations, reasoning, and conversational content must be in natural, polite, and easy-to-understand Japanese.
         Keep responses concise and suitable for voice conversation.
+
+      YOUTUBE_LOADER_LANGUAGE: "ja,en"
 
       # Google Drive Integration
       #ENABLE_GOOGLE_DRIVE_INTEGRATION: "true"
@@ -708,9 +714,13 @@ services:
         condition: service_healthy
       tika:
         condition: service_healthy
+      docling:
+        condition: service_healthy
       searxng:
         condition: service_healthy
       valkey:
+        condition: service_healthy
+      playwright:
         condition: service_healthy
     networks:
       llm-net: {}
@@ -810,6 +820,32 @@ services:
       interval: 10s
       timeout: 3s
       retries: 10
+    networks:
+      llm-net: {}
+
+  playwright:
+    <<: *common
+    image: mcr.microsoft.com/playwright:v1.58.2-noble
+    container_name: playwright
+    restart: unless-stopped
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+    command:
+      - /bin/sh
+      - -lc
+      - |
+        # Start Playwright browser server with fixed version
+        npx -y playwright@1.58.0 run-server --host 0.0.0.0 --port 3000
+    shm_size: "1gb"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - |
+          timeout 3 bash -lc '</dev/tcp/127.0.0.1/3000'
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     networks:
       llm-net: {}
 
@@ -1034,6 +1070,34 @@ services:
     networks:
       llm-net: {}
 
+  docling:
+    <<: *common
+    image: quay.io/docling-project/docling-serve:latest
+    container_name: docling
+    restart: unless-stopped
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+    environment:
+      DOCLING_SERVE_ENABLE_UI: "true"
+    expose:
+      - "5001"
+    ports:
+      - "5001:5001"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - |
+          python3 - << 'PY'
+          import urllib.request
+          urllib.request.urlopen("http://127.0.0.1:5001/health", timeout=5)
+          print("OK")
+          PY
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      llm-net: {}
 
   mitmproxy:
     <<: *common

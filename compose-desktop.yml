@@ -1,0 +1,285 @@
+x-logging: &default-logging
+  logging:
+    driver: local
+    options:
+      max-size: "20m"
+      max-file: "5"
+x-common: &common
+  restart: unless-stopped
+  init: true
+  <<: *default-logging
+
+services:
+  openai-edge-tts:
+    <<: *common
+    image: ghcr.io/remsky/kokoro-fastapi-cpu:latest
+    container_name: openai-edge-tts
+    restart: unless-stopped
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+    ports:
+      - "127.0.0.1:8880:8880"
+    environment:
+      TZ: Asia/Tokyo
+    healthcheck:
+        test:
+            [
+                "CMD-SHELL",
+                "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8880/v1/models', timeout=5);\""
+            ]
+        interval: 30s
+        timeout: 10s
+        retries: 10
+        start_period: 60s
+    networks:
+      llm-net: {}
+
+  searxng:
+    <<: *common
+    image: searxng/searxng:latest
+    container_name: searxng
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8088:8080"
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+    volumes:
+      - ./data/searxng:/etc/searxng
+    environment:
+      INSTANCE_NAME: searxng
+      TZ: Asia/Tokyo
+    healthcheck:
+      test:
+        ["CMD-SHELL", "wget -q --spider http://127.0.0.1:8080 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    depends_on:
+      valkey:
+        condition: service_healthy
+    networks:
+      llm-net: {}
+
+  valkey:
+    <<: *common
+    image: valkey/valkey:latest
+    container_name: valkey
+    restart: unless-stopped
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    networks:
+      llm-net: {}
+
+  playwright:
+    <<: *common
+    image: mcr.microsoft.com/playwright:v1.58.2-noble
+    container_name: playwright
+    restart: unless-stopped
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+    command:
+      - /bin/sh
+      - -lc
+      - |
+        # Start Playwright browser server with fixed version
+        npx -y playwright@1.58.0 run-server --host 0.0.0.0 --port 3000
+    shm_size: "1gb"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - |
+          timeout 3 bash -lc '</dev/tcp/127.0.0.1/3000'
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      llm-net: {}
+
+  mcpo:
+    <<: *common
+    image: ghcr.io/open-webui/mcpo:latest
+    container_name: mcpo
+    restart: unless-stopped
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+    command:
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8000"
+      - "--config"
+      - "/app/config/config.json"
+      - "--hot-reload"
+    ports:
+      - "127.0.0.1:8000:8000"                       # Open docs from outside: http://<host>:8000/docs
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./mcpo/config.json:/app/config/config.json:ro
+      - ./mcpo/data:/app/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request,sys; urllib.request.urlopen('http://127.0.0.1:8000/time/openapi.json', timeout=3); sys.exit(0)"
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      llm-net: {}
+
+  pipeline:
+    <<: *common
+    image: ghcr.io/open-webui/pipelines:latest
+    container_name: pipeline
+    restart: unless-stopped
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+    volumes:
+      - ./pipelines:/app/pipelines
+    environment:
+      PIPELINES_API_KEY: "Change_Me_Pipeline_api_key"
+
+      # Default Ollama endpoint for other pipelines
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      #OLLAMA_BASE_URL: http://192.168.1.20:11434
+
+      # pipeline customization pipeline/ollama-lmstudio_manifold.py
+      # Dedicated CPU Ollama endpoint for ollama_manifold_cpu.py
+      # OLLAMA_CPU_BASE_URL: http://host.docker.internal:11434
+
+      # Dedicated CPU Ollama endpoint for ollama_manifold_cpu.py
+      # LMSTUDIO_BASE_URL: http://host.docker.internal:1234
+
+      # If you want to use OpenAI API
+      # OPENAI_API_BASE_URL: http://ollama:11434/v1
+      # OPENAI_API_KEY: ollama-local
+      MCPO_BASE_URL: "http://mcpo:8000"
+      # SUMMARY_MODEL: "qwen3.5:0.8b"
+      SUMMARY_EVERY_N_USER_TURNS: "8"
+      SUMMARY_KEEP_LAST_TURNS: "6"
+    ports:
+      - "127.0.0.1:9099:9099"     # expose pipelines to host (for curl/debug)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test:
+        ["CMD", "curl", "-f", "http://127.0.0.1:9099"]
+    networks:
+      llm-net: {}
+
+  terminals:
+    <<: *common
+    image: ghcr.io/open-webui/terminals:latest
+    container_name: openwebui-terminals
+    restart: unless-stopped
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+    environment:
+      TERMINALS_BACKEND: docker
+      TERMINALS_API_KEY: "Change_Me_terminal_api_key"
+      TERMINALS_IMAGE: ghcr.io/open-webui/open-terminal:latest
+      TERMINALS_NETWORK: llm-net
+      TERMINALS_PORT: "3001"
+      TERMINALS_HOST: "0.0.0.0"
+      TERMINALS_IDLE_TIMEOUT_MINUTES: "30"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./data/terminals:/app/data
+    ports:
+      - "127.0.0.1:3001:3001"
+    healthcheck:
+        test:
+            [
+                "CMD-SHELL",
+                "python3 -c \"import socket; s=socket.create_connection(('127.0.0.1',3001),5); s.close()\""
+            ]
+        interval: 30s
+        timeout: 10s
+        retries: 10
+        start_period: 30s
+    networks:
+      - llm-net
+
+  tika:
+    <<: *common
+    # ----- LOCAL BUILD -----
+    # build:
+    #   context: ./tika-ja-full
+    #   dockerfile: Dockerfile
+    # image: tika-ja-full:local
+
+    # ----- REGISTRY -----
+    # image: apache/tika:latest
+    image: apache/tika:latest-full # Including lot of apps and heavy
+    container_name: tika
+    restart: unless-stopped
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+    ports:
+       - "127.0.0.1:9998:9998"
+    environment:
+      LANG: ja_JP.UTF-8
+      LANGUAGE: ja_JP:ja
+      LC_ALL: ja_JP.UTF-8
+      TZ: Asia/Tokyo
+      JAVA_TOOL_OPTIONS: "-Xms512m -Xmx4g"
+    volumes:
+      - ./tika-ja-full/tika-config.xml:/tika-config.xml:ro
+    command: ["--config", "/tika-config.xml"]
+    healthcheck:
+        test:
+            [
+                "CMD-SHELL",
+                "wget -q --spider http://127.0.0.1:9998/tika || exit 1"
+            ]
+        interval: 30s
+        timeout: 10s
+        retries: 10
+        start_period: 30s
+    networks:
+      llm-net: {}
+
+  docling:
+    <<: *common
+    image: quay.io/docling-project/docling-serve:latest
+    container_name: docling
+    restart: unless-stopped
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+    environment:
+      DOCLING_SERVE_ENABLE_UI: "true"
+    expose:
+      - "5001"
+    ports:
+      - "5001:5001"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - |
+          python3 - << 'PY'
+          import urllib.request
+          urllib.request.urlopen("http://127.0.0.1:5001/health", timeout=5)
+          print("OK")
+          PY
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      llm-net: {}
+
+
+networks:
+  llm-net:
+    name: llm-net
