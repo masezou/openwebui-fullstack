@@ -119,9 +119,9 @@ services:
     <<: *common
     #image: ghcr.io/open-webui/open-webui:latest-cuda
     #image: ghcr.io/open-webui/open-webui:dev-cuda
-    image: ghcr.io/open-webui/open-webui:0.9.2-cuda
+    image: ghcr.io/open-webui/open-webui:0.9.4-cuda
     #image: ghcr.io/open-webui/open-webui:latest
-    #image: ghcr.io/open-webui/open-webui:0.9.2
+    #image: ghcr.io/open-webui/open-webui:0.9.4
     gpus: all
     container_name: open-webui
     restart: unless-stopped
@@ -206,7 +206,7 @@ services:
       ENABLE_API_KEYS: "true"
 
       # ----- Core -----
-      USER_AGENT: "OpenWebUI/0.9.2 (dev-test)"
+      USER_AGENT: "OpenWebUI/0.9.4 (dev-test)"
       ENV: dev                                           # Development / internal test behavior
 
       # Treat this as first-boot seeding. These "PersistentConfig" values are stored by WebUI after initial launch.
