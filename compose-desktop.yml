@@ -132,9 +132,10 @@ services:
           "-c",
           "import urllib.request,sys; urllib.request.urlopen('http://127.0.0.1:8000/time/openapi.json', timeout=3); sys.exit(0)"
         ]
-      interval: 5s
-      timeout: 3s
-      retries: 20
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 180s
     networks:
       llm-net: {}
 
